@@ -1,0 +1,85 @@
+"""Rollback must use the installed package and avoid existing KWin object IDs."""
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+
+class FakeKWin:
+    def __init__(self):
+        self.next_id = 2
+        self.paths = {"Script2"}
+        self.loaded = {}
+        self.ran = []
+
+    def isScriptLoaded(self, name):
+        return name in self.loaded
+
+    def loadScript(self, path, name, signature):
+        assert signature == "ss" and Path(path).is_file()
+        number = self.next_id
+        self.next_id += 1
+        registered = "Script" + str(number) not in self.paths
+        self.loaded[name] = (number, registered)
+        if registered:
+            self.paths.add("Script" + str(number))
+        return number
+
+    loadDeclarativeScript = loadScript
+
+    def unloadScript(self, name):
+        number, registered = self.loaded.pop(name)
+        if registered:
+            self.paths.remove("Script" + str(number))
+
+    def get_object(self, service, path):
+        assert service == "org.kde.KWin"
+        if path == "/Scripting":
+            return SimpleNamespace(Introspect=lambda **_: "<node>" + "".join(
+                '<node name="' + name + '"/>' for name in self.paths) + "</node>")
+        number = int(path.rsplit("Script", 1)[1])
+        return SimpleNamespace(run=lambda: self.ran.append(number))
+
+
+class RollbackTests(unittest.TestCase):
+    def setUp(self):
+        fake_dbus = SimpleNamespace(Interface=lambda obj, interface: obj)
+        path = Path(__file__).resolve().parent.parent / "tools/install.py"
+        spec = importlib.util.spec_from_file_location("smooth_install_test", path)
+        self.module = importlib.util.module_from_spec(spec)
+        with patch.dict("sys.modules", {"dbus": fake_dbus}):
+            spec.loader.exec_module(self.module)
+
+    def package(self, data, relative="code/main.js"):
+        package = data / "kwin/scripts/skip-empty-spaces"
+        (package / "contents/code").mkdir(parents=True)
+        (package / "contents/code/main.js").write_text("// previously installed handler\n")
+        (package / "metadata.json").write_text(json.dumps({
+            "X-Plasma-API": "javascript", "X-Plasma-MainScript": relative}))
+
+    def test_restore_uses_installed_source_and_never_runs_a_colliding_object(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory)
+            self.package(data)
+            kwin = FakeKWin()
+            self.module.restore_previous_script(kwin, kwin, data)
+            self.assertEqual(kwin.ran, [3])
+            self.assertEqual(set(kwin.loaded), {"skip-empty-spaces"})
+            self.assertEqual(kwin.paths, {"Script2", "Script3"})
+
+    def test_invalid_installed_main_file_does_not_start_any_script(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory)
+            self.package(data, "../../../outside.js")
+            kwin = FakeKWin()
+            with self.assertRaisesRegex(RuntimeError, "Invalid main file"):
+                self.module.restore_previous_script(kwin, kwin, data)
+            self.assertEqual(kwin.ran, [])
+            self.assertEqual(kwin.loaded, {})
+
+
+if __name__ == "__main__":
+    unittest.main()

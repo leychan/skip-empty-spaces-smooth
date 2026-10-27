@@ -1,0 +1,16 @@
+{
+  "KPackageStructure": "KWin/Effect",
+  "KPlugin": {
+    "Id": "skip-empty-spaces-smooth",
+    "Name": "Slide Between Occupied Spaces",
+    "Name[zh_CN]": "非空桌面连续滑动",
+    "Description": "Slide directly between occupied desktops with live touchpad animation (KWin 6.7+)",
+    "Description[zh_CN]": "触控板直接滑向下一个非空桌面，动画不经过空桌面（KWin 6.7+）",
+    "Category": "Virtual Desktop Switching Animation",
+    "Version": "2.0.0",
+    "License": "MIT",
+    "EnabledByDefault": false
+  },
+  "X-KDE-Ordering": 50,
+  "X-Plasma-API": "declarativescript"
+}
