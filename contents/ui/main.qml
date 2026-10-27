@@ -3,15 +3,23 @@ import QtQuick
 import QtQml.Models
 import org.kde.kwin 3.0 as KWin
 import "../code/navigation.js" as Navigation
+import "../code/spring.js" as Spring
 
 KWin.SceneEffect {
     id: root
     visible: false
+    readonly property string buildId: "@SKIP_EMPTY_BUILD@"
     property var activeGesture: null
     property real progress: 0
     property bool tracking: false
     property bool internalSwitch: false
-    readonly property int duration: 180
+    property bool settling: false
+    property var motion: null
+    property real motionScale: 1
+    property real lastFrameTime: 0
+    readonly property real animationTimeFactor: configuration && configuration.AnimationTimeFactor !== undefined ? Math.max(0, configuration.AnimationTimeFactor) : 1
+    readonly property real horizontalGap: configuration && configuration.HorizontalGap !== undefined ? configuration.HorizontalGap : 45
+    readonly property bool slideBackground: !configuration || configuration.SlideBackground === undefined ? true : configuration.SlideBackground
 
     delegate: SlideView { controller: root }
 
@@ -20,7 +28,8 @@ KWin.SceneEffect {
             var gesture = Navigation.plan(KWin.Workspace, handler.modelData.step);
             if (!gesture) return;
             if (root.visible && root.tracking && root.activeGesture !== gesture) return;
-            settle.stop();
+            settling = false;
+            motion = null;
             handler.gesture = gesture;
             activeGesture = gesture;
             progress = 0;
@@ -49,13 +58,49 @@ KWin.SceneEffect {
         internalSwitch = true;
         KWin.Workspace.setCurrentDesktopForScreen(target, gesture.output);
         internalSwitch = false;
-        settle.to = target === gesture.origin ? 0 : 1;
-        settle.duration = Math.max(70, duration * Math.abs(settle.to - progress));
-        settle.restart();
+        startSettling(target === gesture.origin ? 0 : 1);
+    }
+
+    function startSettling(target) {
+        // Native Slide measures the spring in virtual-space pixels and ends
+        // below one pixel of displacement and one pixel/second of velocity.
+        motionScale = Math.max(1, KWin.Workspace.virtualScreenSize.width);
+        motion = Spring.create(progress * motionScale, target * motionScale, animationTimeFactor, 0);
+        if (animationTimeFactor === 0 || !Spring.moving(motion)) {
+            progress = target;
+            abort();
+            return;
+        }
+        lastFrameTime = Date.now();
+        settling = true;
+        var view = root.viewForScreen(activeGesture.output);
+        if (view) view.scheduleRepaint();
+        watchdog.restart();
+    }
+
+    function advanceFrame(now) {
+        if (!settling || !motion) return;
+        // The active output owns this clock. A standalone FrameAnimation can
+        // wake between compositor frames and leave periodic gaps on high-Hz
+        // outputs. afterAnimating runs before this view's scene graph sync.
+        var elapsed = Math.max(0, now - lastFrameTime) / 1000;
+        lastFrameTime = Math.max(lastFrameTime, now);
+        Spring.advance(motion, elapsed);
+        progress = motion.position / motionScale;
+        if (!Spring.moving(motion)) {
+            progress = motion.target / motionScale;
+            settling = false;
+            var completed = motion;
+            // Destroy the scene views only after their current render returns.
+            Qt.callLater(function () {
+                if (root.motion === completed && !root.tracking && !root.settling) root.abort();
+            });
+        }
     }
 
     function abort() {
-        settle.stop();
+        settling = false;
+        motion = null;
         tracking = false;
         visible = false;
         watchdog.stop();
@@ -63,13 +108,6 @@ KWin.SceneEffect {
         Qt.callLater(function () { if (!root.visible) root.activeGesture = null; });
     }
 
-    NumberAnimation {
-        id: settle
-        target: root
-        property: "progress"
-        easing.type: Easing.OutCubic
-        onFinished: root.abort()
-    }
     Timer {
         id: watchdog
         interval: 4000
@@ -113,9 +151,7 @@ KWin.SceneEffect {
             root.tracking = false;
             root.visible = true;
             Qt.callLater(function () {
-                settle.to = 1;
-                settle.duration = root.duration;
-                settle.restart();
+                root.startSettling(1);
             });
         }
     }

@@ -61,7 +61,10 @@ def preview():
                 visualTarget: root.activeGesture.target.name,
                 skippedNativeTarget: root.activeGesture.nativeTarget.name,
                 width: view.rootItem.width, height: view.rootItem.height,
-                progress: root.progress
+                progress: root.progress,
+                horizontalGap: root.horizontalGap,
+                slideBackground: root.slideBackground,
+                animationTimeFactor: root.animationTimeFactor
             })];
             root.previewReport.call();
         }

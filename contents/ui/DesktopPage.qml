@@ -8,13 +8,15 @@ Item {
     required property QtObject screen
     // moving: ordinary windows; fixed: panels and sticky windows; all: passive screen.
     property string layerMode: "moving"
+    property bool showWallpaper: layerMode !== "fixed"
+    clip: true
 
     KWin.DesktopBackground {
         anchors.fill: parent
         output: page.screen
         desktop: page.desktop
         activity: KWin.Workspace.currentActivity
-        visible: page.layerMode !== "fixed"
+        visible: page.showWallpaper
     }
 
     Repeater {

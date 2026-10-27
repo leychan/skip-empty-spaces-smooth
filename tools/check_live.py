@@ -43,11 +43,24 @@ import org.kde.kwin 3.0 as KWin
 import "contents/code/navigation.js" as Navigation
 QtObject {
     id: probeRoot
+    property var motionRoot: null
+    property var pendingReport: null
     property KWin.DBusCall probeReport: KWin.DBusCall {
         service: "org.codex.SkipEmptySpacesCheck"
         path: "/check"
         dbusInterface: "org.codex.SkipEmptySpacesCheck"
         method: "Report"
+    }
+    property FrameAnimation motionProbe: FrameAnimation {
+        onTriggered: {
+            if (elapsedTime < 0.2) return;
+            stop();
+            probeRoot.pendingReport.springProgress = probeRoot.motionRoot.progress;
+            probeRoot.pendingReport.springFrameTime = frameTime;
+            probeRoot.motionRoot.abort();
+            probeRoot.probeReport.arguments = [JSON.stringify(probeRoot.pendingReport)];
+            probeRoot.probeReport.call();
+        }
     }
     Component.onCompleted: {
             var result;
@@ -86,8 +99,23 @@ QtObject {
             } catch (error) {
                 result = { error: String(error) };
             }
-            probeRoot.probeReport.arguments = [JSON.stringify(result)];
-            probeRoot.probeReport.call();
+            if (result.error) {
+                probeRoot.probeReport.arguments = [JSON.stringify(result)];
+                probeRoot.probeReport.call();
+            } else {
+                probeRoot.motionRoot = root;
+                probeRoot.pendingReport = result;
+                root.startSettling(1);
+                // This probe has no displayed SceneView. Feed the same
+                // elapsed interval that a live output supplies before sync.
+                var started = root.lastFrameTime;
+                root.advanceFrame(started + 200);
+                var position = root.progress;
+                root.advanceFrame(started + 200);
+                root.advanceFrame(started + 190);
+                result.outputClockSafe = root.progress === position && root.lastFrameTime === started + 200;
+                probeRoot.motionProbe.start();
+            }
     }
 }
 '''
@@ -127,6 +155,8 @@ QtObject {
             assert "error" not in report, report
             assert report["hasPerScreenSetter"], report
             assert report["viewReady"], report
+            assert report["outputClockSafe"], report
+            assert 0.4 < report["springProgress"] < 1, report
             assert sorted((h["fingers"], h["step"]) for h in report["handlers"]) == [
                 (3, -1), (3, 1), (4, -1), (4, 1)
             ], report

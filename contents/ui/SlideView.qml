@@ -25,19 +25,33 @@ Item {
         anchors.fill: parent
         active: view.moving
         sourceComponent: Item {
+            readonly property real stride: view.width + controller.horizontalGap
+            Rectangle {
+                anchors.fill: parent
+                color: "black"
+            }
+            KWin.DesktopBackground {
+                anchors.fill: parent
+                output: view.screen
+                desktop: view.gesture.origin
+                activity: KWin.Workspace.currentActivity
+                visible: !controller.slideBackground
+            }
             DesktopPage {
                 width: view.width
                 height: view.height
                 desktop: view.gesture.origin
                 screen: view.screen
-                x: -view.gesture.step * controller.progress * view.width
+                showWallpaper: controller.slideBackground
+                x: -view.gesture.step * controller.progress * parent.stride
             }
             DesktopPage {
                 width: view.width
                 height: view.height
                 desktop: view.gesture.target
                 screen: view.screen
-                x: view.gesture.step * (1 - controller.progress) * view.width
+                showWallpaper: controller.slideBackground
+                x: view.gesture.step * (1 - controller.progress) * parent.stride
                 visible: view.gesture.target !== view.gesture.origin
             }
             DesktopPage {
@@ -49,4 +63,20 @@ Item {
         }
     }
     Keys.onEscapePressed: controller.abort()
+
+    Connections {
+        target: view.Window.window
+        function onAfterAnimating() {
+            if (view.moving) controller.advanceFrame(Date.now());
+        }
+        function onAfterRendering() {
+            // Request the next compositor frame on this output only. The
+            // passive screen keeps its own refresh rate and stays idle.
+            // Queue it after the current render has returned, so the next
+            // repaint cannot be consumed by this frame on a slower output.
+            Qt.callLater(function () {
+                if (view.moving && controller.settling) view.KWin.SceneView.scheduleRepaint();
+            });
+        }
+    }
 }

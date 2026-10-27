@@ -29,7 +29,12 @@ class PackageTests(unittest.TestCase):
             with ZipFile(archive) as package:
                 self.assertIsNone(package.testzip())
                 self.assertEqual(json.loads(package.read("metadata.json"))["KPackageStructure"], "KWin/Effect")
-                self.assertEqual(package.read("contents/ui/main.qml"), (source / "contents/ui/main.qml").read_bytes())
+                metadata = json.loads(package.read("metadata.json"))
+                build = metadata["X-SkipEmptySpaces-Build"]
+                self.assertEqual(len(build), 64)
+                self.assertEqual(package.read("contents/ui/main.qml"),
+                                 (source / "contents/ui/main.qml").read_bytes().replace(b"@SKIP_EMPTY_BUILD@", build.encode()))
+                self.assertNotIn(b"@SKIP_EMPTY_BUILD@", package.read("contents/ui/main.qml"))
                 self.assertTrue({"README.md", "LICENSE", "contents/code/navigation.js",
                                  "contents/ui/DesktopPage.qml", "contents/ui/SlideView.qml"}.issubset(package.namelist()))
                 self.assertFalse(any(name.startswith(("/", "../", "tools/", "tests/")) for name in package.namelist()))
