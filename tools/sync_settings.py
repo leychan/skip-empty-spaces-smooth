@@ -43,11 +43,19 @@ def sync(reconfigure=True, plugin=None):
                   if str(name) == PLUGIN or str(name).startswith(PLUGIN + "-runtime-")]
         plugin = active[0] if len(active) == 1 else PLUGIN
     settings = native_settings()
-    for key, value in settings.items():
-        subprocess.run(["kwriteconfig6", "--file", "kwinrc", "--group", "Effect-" + plugin,
-                        "--key", key, value], check=True)
+    for destination in {plugin, PLUGIN}:
+        for key, value in settings.items():
+            subprocess.run(["kwriteconfig6", "--file", "kwinrc", "--group", "Effect-" + destination,
+                            "--key", key, value], check=True)
     if reconfigure:
         subprocess.run(["qdbus6", "org.kde.KWin", "/Effects", "org.kde.kwin.Effects.reconfigureEffect", plugin], check=True)
+        import dbus
+        obj = dbus.SessionBus().get_object("org.kde.KWin", "/Effects")
+        properties = dbus.Interface(obj, "org.freedesktop.DBus.Properties")
+        effects = dbus.Interface(obj, "org.kde.kwin.Effects")
+        for name in properties.Get("org.kde.kwin.Effects", "loadedEffects"):
+            if str(name).startswith("skip-empty-spaces-native-"):
+                effects.reconfigureEffect(name)
     print(json.dumps(settings))
 
 

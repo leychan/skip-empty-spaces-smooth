@@ -4,6 +4,7 @@ import QtQml.Models
 import org.kde.kwin 3.0 as KWin
 import "../code/navigation.js" as Navigation
 import "../code/spring.js" as Spring
+import "../code/pixels.js" as Pixels
 
 KWin.SceneEffect {
     id: root
@@ -17,11 +18,27 @@ KWin.SceneEffect {
     property var motion: null
     property real motionScale: 1
     property real lastFrameTime: 0
+    // Bounded, in-memory lifecycle diagnostics; no window contents are stored.
+    property string traceLog: "[]"
     readonly property real animationTimeFactor: configuration && configuration.AnimationTimeFactor !== undefined ? Math.max(0, configuration.AnimationTimeFactor) : 1
     readonly property real horizontalGap: configuration && configuration.HorizontalGap !== undefined ? configuration.HorizontalGap : 45
     readonly property bool slideBackground: !configuration || configuration.SlideBackground === undefined ? true : configuration.SlideBackground
 
     delegate: SlideView { controller: root }
+
+    function recordTrace(event) {
+        var rows = JSON.parse(traceLog || "[]");
+        rows.push({ time: Date.now(), event: event, progress: progress,
+            visible: visible, tracking: tracking, settling: settling,
+            output: activeGesture && activeGesture.output ? activeGesture.output.name : "" });
+        traceLog = JSON.stringify(rows.slice(-48));
+    }
+
+    onActivated: recordTrace("effect-activated")
+    onDeactivated: {
+        recordTrace("effect-deactivated");
+        Qt.callLater(function () { root.recordTrace("effect-stopped"); });
+    }
 
     function update(handler) {
         if (!handler.gesture) {
@@ -35,6 +52,7 @@ KWin.SceneEffect {
             progress = 0;
             tracking = true;
             visible = true;
+            recordTrace("gesture-start");
         }
         if (activeGesture !== handler.gesture || !Navigation.valid(KWin.Workspace, activeGesture)) return;
         progress = activeGesture.target === activeGesture.origin ? 0 : Math.min(handler.progress, 1);
@@ -53,6 +71,7 @@ KWin.SceneEffect {
     function release(gesture) {
         if (activeGesture !== gesture) return;
         tracking = false;
+        recordTrace("release");
         var target = Navigation.releasedTarget(KWin.Workspace, gesture);
         if (!target) { abort(); return; }
         internalSwitch = true;
@@ -73,6 +92,7 @@ KWin.SceneEffect {
         }
         lastFrameTime = Date.now();
         settling = true;
+        recordTrace("settle-start");
         var view = root.viewForScreen(activeGesture.output);
         if (view) view.scheduleRepaint();
         watchdog.restart();
@@ -87,9 +107,15 @@ KWin.SceneEffect {
         lastFrameTime = Math.max(lastFrameTime, now);
         Spring.advance(motion, elapsed);
         progress = motion.position / motionScale;
-        if (!Spring.moving(motion)) {
+        var output = activeGesture.output;
+        var physicalStride = Pixels.stride(output.geometry.width, horizontalGap, output.devicePixelRatio);
+        // Once the page has landed on the destination's physical pixel, its
+        // preview would only prolong the softer thumbnail image. Hand off to
+        // the real desktop instead of waiting for subpixel spring velocity.
+        if (!Spring.moving(motion) || Pixels.landed(progress, motion.target / motionScale, physicalStride)) {
             progress = motion.target / motionScale;
             settling = false;
+            recordTrace("landed");
             var completed = motion;
             // Destroy the scene views only after their current render returns.
             Qt.callLater(function () {
@@ -99,10 +125,12 @@ KWin.SceneEffect {
     }
 
     function abort() {
+        recordTrace("abort-begin");
         settling = false;
         motion = null;
         tracking = false;
         visible = false;
+        recordTrace("abort-end");
         watchdog.stop();
         // Allow the view to be removed before dropping its desktop references.
         Qt.callLater(function () { if (!root.visible) root.activeGesture = null; });

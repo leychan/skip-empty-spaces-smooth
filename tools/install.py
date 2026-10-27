@@ -85,6 +85,13 @@ def verify_build(information, build):
     return "buildId: " + build in str(information).splitlines()
 
 
+def verify_native(information, renderer, build):
+    lines = str(information).splitlines()
+    return (verify_build(information, build) and "nativeLoaded: true" in lines and
+            "nativeId: skip-empty-spaces-native-" + build[:12] in lines and
+            verify_build(renderer, build) and "renderer: native-window-scene" in str(renderer).splitlines())
+
+
 def runtime_archive(source, destination, plugin):
     with ZipFile(source) as original, ZipFile(destination, "w", ZIP_DEFLATED) as archive:
         for item in original.infolist():
@@ -103,7 +110,9 @@ def install(enable=True):
     data = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
     effect_root = data / "kwin/effects"
     with ZipFile(archive) as package:
-        build = json.loads(package.read("metadata.json"))["X-SkipEmptySpaces-Build"]
+        package_metadata = json.loads(package.read("metadata.json"))
+        build = package_metadata["X-SkipEmptySpaces-Build"]
+        native = package_metadata.get("X-SkipEmptySpaces-Renderer") == "native"
     bus = dbus.SessionBus()
     effects = dbus.Interface(bus.get_object("org.kde.KWin", "/Effects"), "org.kde.kwin.Effects")
     scripting = dbus.Interface(bus.get_object("org.kde.KWin", "/Scripting", introspect=False), "org.kde.kwin.Scripting")
@@ -118,6 +127,13 @@ def install(enable=True):
     active = PLUGIN
     attempted = []
 
+    def current(name):
+        information = effects.supportInformation(name)
+        if not native:
+            return verify_build(information, build)
+        renderer = "skip-empty-spaces-native-" + build[:12]
+        return effects.isEffectLoaded(renderer) and verify_native(information, effects.supportInformation(renderer), build)
+
     def load(name, archive):
         mode = "--upgrade" if (effect_root / name).exists() else "--install"
         subprocess.run(["kpackagetool6", "--type", "KWin/Effect", mode, str(archive)], check=True)
@@ -129,7 +145,7 @@ def install(enable=True):
 
     try:
         load(active, archive)
-        if not verify_build(effects.supportInformation(active), build):
+        if not current(active):
             # KWin shares a QQmlEngine across reloads. The stable path can still
             # instantiate an old component after its files were upgraded. A
             # content-addressed package gives every changed QML/JS file a fresh URL.
@@ -138,7 +154,7 @@ def install(enable=True):
             hot_archive = root / "dist" / (active + ".zip")
             runtime_archive(archive, hot_archive, active)
             load(active, hot_archive)
-        if not verify_build(effects.supportInformation(active), build):
+        if not current(active):
             raise RuntimeError("KWin is running a stale QML build; refusing to report success")
         if enable:
             # The replacement supplies both the live gesture and ordinary desktop

@@ -51,12 +51,11 @@ QtObject {
         dbusInterface: "org.codex.SkipEmptySpacesCheck"
         method: "Report"
     }
-    property FrameAnimation motionProbe: FrameAnimation {
+    property Timer motionProbe: Timer {
+        interval: 200
         onTriggered: {
-            if (elapsedTime < 0.2) return;
             stop();
             probeRoot.pendingReport.springProgress = probeRoot.motionRoot.progress;
-            probeRoot.pendingReport.springFrameTime = frameTime;
             probeRoot.motionRoot.abort();
             probeRoot.probeReport.arguments = [JSON.stringify(probeRoot.pendingReport)];
             probeRoot.probeReport.call();

@@ -103,6 +103,15 @@ class RollbackTests(unittest.TestCase):
                 self.assertEqual(metadata["X-SkipEmptySpaces-Build"], "c" * 64)
                 self.assertEqual(package.read("contents/ui/main.qml"), b"// verified code")
 
+    def test_native_renderer_must_match_the_wrapper_build(self):
+        build = "a" * 64
+        wrapper = "buildId: " + build + "\nnativeLoaded: true\nnativeId: skip-empty-spaces-native-" + build[:12]
+        renderer = "renderer: native-window-scene\nbuildId: " + build
+        self.assertTrue(self.module.verify_native(wrapper, renderer, build))
+        self.assertFalse(self.module.verify_native(wrapper.replace("true", "false"), renderer, build))
+        self.assertFalse(self.module.verify_native(wrapper, renderer.replace(build, "b" * 64), build))
+        self.assertFalse(self.module.verify_native(wrapper.replace(build[:12], "c" * 12), renderer, build))
+
     def test_cleanup_only_targets_this_effect_and_its_generated_runtime_ids(self):
         self.assertTrue(self.module.is_owned("skip-empty-spaces-smooth"))
         self.assertTrue(self.module.is_owned("skip-empty-spaces-smooth-runtime-cccccccccccc"))

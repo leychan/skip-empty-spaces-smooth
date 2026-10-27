@@ -1,0 +1,10 @@
+{
+  "KPlugin": {
+    "Name": "Occupied Spaces Native Renderer",
+    "Description": "Native scene renderer for Slide Between Occupied Spaces",
+    "Version": "3.0.0",
+    "License": "MIT",
+    "EnabledByDefault": false
+  },
+  "X-KDE-Internal": true
+}

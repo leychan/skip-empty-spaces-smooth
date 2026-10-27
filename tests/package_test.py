@@ -21,7 +21,7 @@ class PackageTests(unittest.TestCase):
             shutil.copytree(source / "contents", checkout / "contents")
             (checkout / "tools").mkdir()
             shutil.copy2(source / "tools/package.py", checkout / "tools/package.py")
-            command = [sys.executable, str(checkout / "tools/package.py")]
+            command = [sys.executable, str(checkout / "tools/package.py"), "--qml-only"]
             subprocess.run(command, cwd=parent, check=True, capture_output=True)
             archive = checkout / "dist/skip-empty-spaces-smooth.zip"
             self.assertTrue(archive.is_file())

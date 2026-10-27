@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import QtQuick
 import org.kde.kwin 3.0 as KWin
+import "../code/pixels.js" as Pixels
 
 Item {
     id: view
@@ -9,6 +10,7 @@ Item {
     readonly property var gesture: controller.activeGesture
     readonly property bool moving: gesture && gesture.output === screen
     readonly property QtObject currentDesktop: KWin.Workspace.currentDesktopForScreen(screen)
+    readonly property real pixelScale: screen ? screen.devicePixelRatio : 1
     clip: true
     focus: true
 
@@ -25,7 +27,8 @@ Item {
         anchors.fill: parent
         active: view.moving
         sourceComponent: Item {
-            readonly property real stride: view.width + controller.horizontalGap
+            readonly property real stride: Pixels.stride(view.width, controller.horizontalGap, view.pixelScale) / view.pixelScale
+            readonly property real offset: Pixels.offset(controller.progress, stride * view.pixelScale) / view.pixelScale
             Rectangle {
                 anchors.fill: parent
                 color: "black"
@@ -43,7 +46,7 @@ Item {
                 desktop: view.gesture.origin
                 screen: view.screen
                 showWallpaper: controller.slideBackground
-                x: -view.gesture.step * controller.progress * parent.stride
+                x: -view.gesture.step * parent.offset
             }
             DesktopPage {
                 width: view.width
@@ -51,7 +54,7 @@ Item {
                 desktop: view.gesture.target
                 screen: view.screen
                 showWallpaper: controller.slideBackground
-                x: view.gesture.step * (1 - controller.progress) * parent.stride
+                x: view.gesture.step * (parent.stride - parent.offset)
                 visible: view.gesture.target !== view.gesture.origin
             }
             DesktopPage {
