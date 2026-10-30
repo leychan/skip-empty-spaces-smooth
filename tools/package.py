@@ -27,7 +27,7 @@ build = fingerprint.hexdigest()
 native = None
 if not args.qml_only:
     from build_native import build_native
-    native = build_native(root, build)
+    native, build = build_native(root, build)
 with ZipFile(destination, "w", ZIP_DEFLATED) as archive:
     for path in files:
         if path.is_file():
